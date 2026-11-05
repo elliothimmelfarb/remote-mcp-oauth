@@ -1,4 +1,4 @@
-export { createApp } from "./app.js";
+export { createApp, parseIssuer } from "./app.js";
 export { passwordAuthenticator } from "./consent.js";
 export { LEGACY_VERSIONS, MODERN_VERSION } from "./mcp.js";
 export { toNodeListener } from "./node.js";

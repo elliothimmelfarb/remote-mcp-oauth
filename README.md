@@ -45,7 +45,7 @@ The behaviour worth knowing about:
 - Each token is bound to this server's resource URI, and `/mcp` checks that binding on every call.
 - Tokens, codes and client secrets are stored only as SHA-256 hashes. Each is 256 bits of randomness, so a slow hash adds nothing.
 - A tool call without the scope it needs gets a 403 with a `WWW-Authenticate` challenge, so the client can ask for more.
-- The issuer comes from configuration and never from the `Host` header.
+- The issuer comes from configuration and never from the `Host` header. `src/main.js` refuses to start with a non-loopback `HOST` unless `PUBLIC_URL` is https.
 - `GET /authorize` is limited to 60 requests a minute per address, and at most 1000 requests wait for consent at once. Past that the oldest is dropped.
 - Ten wrong passwords in 15 minutes block an address, 100 in an hour across all addresses block everyone, and five on one consent request end that request. All IPv6 addresses in a /64 count as one address. Only a wrong password on a live request from the browser that opened it counts, so junk POSTs cannot lock the owner out.
 - The default login refuses to start with a password under 12 characters or one that is easy to guess, such as `aaaaaaaaaaaa` or `password1234`.

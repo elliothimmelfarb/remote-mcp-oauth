@@ -14,7 +14,7 @@ const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
 // The issuer comes from configuration and never from the Host header. Deriving
 // it from a request would let anyone who can set that header rewrite the
 // endpoints a client discovers.
-function parseIssuer(value) {
+export function parseIssuer(value) {
   const url = new URL(value);
   if (url.pathname !== "/" || url.search || url.hash) throw new Error("The issuer must be an origin with no path.");
   if (url.protocol !== "https:" && !(url.protocol === "http:" && LOOPBACK.has(url.hostname))) {
