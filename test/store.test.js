@@ -63,6 +63,15 @@ test("allow counts inside a window and resets after it", async () => {
   assert.equal(await store.allow("k", 2, 60), true);
 });
 
+test("refund takes one count back", async () => {
+  const store = createMemoryStore();
+  assert.equal(await store.allow("k", 1, 60), true);
+  await store.refund("k");
+  assert.equal(await store.allow("k", 1, 60), true);
+  assert.equal(await store.allow("k", 1, 60), false);
+  await store.refund("never-counted");
+});
+
 test("rate limiting alone is enough to purge expired rows", async () => {
   let ms = 0;
   const store = createMemoryStore({ now: () => ms, sweepEveryMs: 0 });

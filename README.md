@@ -46,6 +46,9 @@ The behaviour worth knowing about:
 - Tokens, codes and client secrets are stored only as SHA-256 hashes. Each is 256 bits of randomness, so a slow hash adds nothing.
 - A tool call without the scope it needs gets a 403 with a `WWW-Authenticate` challenge, so the client can ask for more.
 - The issuer comes from configuration and never from the `Host` header.
+- `GET /authorize` is limited to 60 requests a minute per address, and at most 1000 requests wait for consent at once. Past that the oldest is dropped.
+- Ten wrong passwords in 15 minutes block an address, 100 in an hour across all addresses block everyone, and five on one consent request end that request. All IPv6 addresses in a /64 count as one address. Only a wrong password on a live request from the browser that opened it counts, so junk POSTs cannot lock the owner out.
+- The default login refuses to start with a password under 12 characters or one that is easy to guess, such as `aaaaaaaaaaaa` or `password1234`.
 - An authorization error is shown on a page with a link back to the client. It is not an automatic redirect, because registration is open and an automatic redirect would make this an open redirector.
 
 ## Two protocol eras
@@ -85,7 +88,8 @@ These were left out on purpose. Check each one before you deploy this.
 - **Client ID Metadata Documents are not implemented.** `2026-07-28` deprecates dynamic client registration in favour of them, and says servers should support them. Clients still fall back to registration, because the server does not advertise the newer option. Adding them means fetching URLs that clients choose, so you would need to defend against server-side request forgery.
 - **Storage is in memory.** A restart loses every client and token, and the store only works for a single process. Its atomicity comes from Node running one thing at a time.
 - **Registration is open.** Anyone can register a client, limited to 20 an hour per address. Registered clients are never deleted, so a patient caller can grow memory without limit.
-- **Rate limits need a real address.** Behind a reverse proxy, set `TRUST_PROXY=1` or every caller shares one bucket. Set it only when exactly one proxy sits in front of the server, because the header can otherwise be forged.
+- **Rate limits need a real address.** Behind a reverse proxy, set `TRUST_PROXY=1`. With it unset, every caller looks like the proxy, so they all share one bucket. Ten wrong passwords from anyone then block the consent page for everyone for the rest of those 15 minutes, including the owner with the right password, and 60 `GET /authorize` calls in a minute or 20 registrations in an hour do the same to those endpoints. Set it only when exactly one proxy sits in front of the server, because the header can otherwise be forged.
+- **The global password limit can be used against you.** Someone with enough addresses can spend all 100 tries and keep the owner out until the hour ends. That is the price of bounding guesses from many addresses. A real login behind `authenticateUser` is the way out, and the default password suits a personal server and nothing else.
 - **Redirect URIs must be https or loopback,** as the spec requires. Clients that use a custom scheme such as `myapp://` cannot register.
 - **A refresh race ends the session.** Two simultaneous refreshes with one token look the same as a stolen token, so the family is revoked and the person signs in again.
 - **Consent is asked every time.** Nothing remembers an earlier approval.

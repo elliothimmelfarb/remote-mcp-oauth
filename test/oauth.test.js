@@ -256,13 +256,101 @@ test("double submitting consent issues one code", async () => {
   assert.equal((await h.submitConsent(consent)).status, 400);
 });
 
-test("consent attempts are rate limited, which stops password guessing", async () => {
+// One browser on one address: it opens its own request, then answers it.
+async function openFrom(h, client, address) {
+  const response = await h.call(h.authorizeUrl(client, pkce()), {}, address);
+  return {
+    requestId: /name="request_id" value="([^"]+)"/.exec(await response.text())[1],
+    cookie: response.headers.getSetCookie()[0].split(";")[0]
+  };
+}
+
+const answer = (h, { requestId, cookie }, address, fields = {}) =>
+  h.call("/authorize", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+    body: new URLSearchParams({ request_id: requestId, decision: "approve", password: PASSWORD, ...fields })
+  }, address);
+
+const guess = async (h, client, address) => answer(h, await openFrom(h, client, address), address, { password: "wrong" });
+
+test("wrong passwords are limited per address, and the limit covers a whole IPv6 /64", async () => {
+  const h = harness();
+  const { client } = await h.register();
+  for (let i = 0; i < 10; i++) assert.equal((await guess(h, client, `2001:db8:1:2::${i + 1}`)).status, 401);
+  const blocked = await answer(h, await openFrom(h, client, "2001:db8:1:2::ff"), "2001:db8:1:2::ff");
+  assert.equal(blocked.status, 429);
+  assert.equal((await answer(h, await openFrom(h, client, "2001:db8:1:3::1"), "2001:db8:1:3::1")).status, 303);
+});
+
+test("parallel guesses cannot all get past the limit", async () => {
+  let checked = 0;
+  const h = harness({
+    authenticateUser: async () => {
+      checked += 1;
+      await new Promise((resolve) => setImmediate(resolve));
+      return null;
+    }
+  });
+  const { client } = await h.register();
+  const opened = [];
+  for (let i = 0; i < 20; i++) opened.push(await openFrom(h, client, "203.0.113.9"));
+  await Promise.all(opened.map((consent) => answer(h, consent, "203.0.113.9", { password: "wrong" })));
+  assert.equal(checked, 10);
+});
+
+test("wrong passwords have a global cap across addresses, which clears after the window", async () => {
+  const h = harness();
+  const { client } = await h.register();
+  for (let i = 0; i < 100; i++) assert.equal((await guess(h, client, `198.51.100.${i}`)).status, 401);
+  const consent = await openFrom(h, client, "203.0.113.50");
+  assert.equal((await answer(h, consent, "203.0.113.50")).status, 429);
+  h.clock.ms += 3600 * 1000;
+  assert.equal((await answer(h, await openFrom(h, client, "203.0.113.50"), "203.0.113.50")).status, 303);
+});
+
+test("an address past its own limit spends none of the global cap", async () => {
+  const h = harness();
+  const { client } = await h.register();
+  for (let i = 0; i < 110; i++) {
+    h.clock.ms += 1100;
+    await guess(h, client, "203.0.113.9");
+  }
+  assert.equal((await answer(h, await openFrom(h, client, "203.0.113.50"), "203.0.113.50")).status, 303);
+});
+
+test("a parked request is dropped after five wrong passwords", async () => {
   const h = harness();
   const { client } = await h.register();
   const consent = await h.openConsent(client, pkce());
-  let last;
-  for (let i = 0; i < 11; i++) last = await h.submitConsent(consent, { password: `guess-${i}` });
-  assert.equal(last.status, 429);
+  for (let i = 0; i < 4; i++) assert.equal((await h.submitConsent(consent, { password: "wrong" })).status, 401);
+  const fifth = await h.submitConsent(consent, { password: "wrong" });
+  assert.equal(fifth.status, 400);
+  assert.match(await fifth.text(), /Start again/);
+  assert.equal((await h.submitConsent(consent)).status, 400);
+});
+
+test("junk POSTs are not password failures, so they cannot lock the owner out", async () => {
+  const h = harness();
+  const { client } = await h.register();
+  const consent = await h.openConsent(client, pkce());
+  for (let i = 0; i < 20; i++) {
+    assert.equal((await h.form("/authorize", { request_id: "nope", password: "wrong" })).status, 400);
+    assert.equal((await h.submitConsent({ ...consent, cookie: "__Host-mcp_browser=attacker" }, { password: "wrong" })).status, 403);
+    assert.equal((await h.form("/authorize", { request_id: consent.requestId, password: "wrong" })).status, 403);
+  }
+  assert.equal((await h.submitConsent(consent)).status, 303);
+});
+
+test("right passwords and denials do not use up the limit", async () => {
+  const h = harness();
+  const { client } = await h.register();
+  for (let i = 0; i < 11; i++) assert.equal((await h.submitConsent(await h.openConsent(client, pkce()))).status, 303);
+  for (let i = 0; i < 11; i++) {
+    const denied = await h.submitConsent(await h.openConsent(client, pkce()), { decision: "deny", password: "" });
+    assert.equal(denied.status, 303);
+  }
+  for (let i = 0; i < 10; i++) assert.equal((await guess(h, client, "203.0.113.1")).status, 401);
 });
 
 test("a parked request expires", async () => {

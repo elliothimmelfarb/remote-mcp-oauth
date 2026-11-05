@@ -17,8 +17,9 @@
 // current one, so a rotation retires the previous pair with one write.
 //
 // getToken returns the row plus `active`. allow(key, limit, windowSeconds) is
-// a fixed window rate limit. Every method may be async. Expiry is checked by
-// the caller, so purging is housekeeping and never a security control.
+// a fixed window rate limit that counts every call, and refund(key) takes one
+// count back. Both must be atomic. Every method may be async. Expiry is checked
+// by the caller, so purging is housekeeping and never a security control.
 //
 // saveRequest must also bound how many requests are parked, because anyone can
 // park one without signing in. Past the cap it drops the oldest rather than
@@ -120,6 +121,10 @@ export function createMemoryStore({ now = Date.now, sweepEveryMs = 60_000, maxPa
       }
       row.count += 1;
       return row.count <= limit;
+    },
+    async refund(key) {
+      const row = rates.get(key);
+      if (row) row.count -= 1;
     }
   };
 }

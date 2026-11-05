@@ -3,7 +3,7 @@
 // address for rate limiting.
 
 import { errorPage } from "./consent.js";
-import { BodyTooLarge, json } from "./http.js";
+import { BodyTooLarge, addressBucket, json } from "./http.js";
 import { createMcp } from "./mcp.js";
 import { corsHeaders, createOAuth } from "./oauth.js";
 import { createMemoryStore } from "./store.js";
@@ -69,7 +69,7 @@ export function createApp({
 
   return async function app(request, { address = "unknown" } = {}) {
     try {
-      return await route(request.method, new URL(request.url).pathname)(request, { address });
+      return await route(request.method, new URL(request.url).pathname)(request, { address: addressBucket(address) });
     } catch (error) {
       if (error instanceof BodyTooLarge) return errorPage("That request is too large.", 413);
       console.error("Request failed", error instanceof Error ? error.name : "UnknownError");

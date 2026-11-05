@@ -24,3 +24,15 @@ test("the default authenticator refuses a short password at startup", () => {
   assert.throws(() => passwordAuthenticator("short"), /12/);
   assert.throws(() => passwordAuthenticator(undefined), /12/);
 });
+
+test("the default authenticator refuses an obviously weak password at startup", () => {
+  for (const password of ["aaaaaaaaaaaa", "abababababab", "abcdabcdabcd", "123456789012", "password1234", "qwertyuiop12", "            "]) {
+    assert.throws(() => passwordAuthenticator(password), /easy to guess/, password);
+  }
+});
+
+test("the default authenticator accepts a long or random password, in any script", () => {
+  for (const password of ["correct horse battery", "x7#kQ2!mZp9L", "дежурный-пароль"]) {
+    assert.doesNotThrow(() => passwordAuthenticator(password), password);
+  }
+});

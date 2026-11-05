@@ -7,9 +7,20 @@
 
 import { escapeHtml, html, safeEqual } from "./http.js";
 
+// Only digits, punctuation and spaces, perhaps after a word from the top of
+// every leaked password list. Letters from any script count as letters.
+const COMMON_PATTERN = /^(?:pass(?:word)?|qwerty(?:uiop)?|letmein|changeme|welcome|admin)?[\p{N}\p{P}\p{S}\p{Z}]*$/iu;
+
+function isEasyToGuess(password) {
+  return new Set(password).size < 5 || COMMON_PATTERN.test(password);
+}
+
 export function passwordAuthenticator(password, user = { id: "owner", name: "Owner" }) {
   if (typeof password !== "string" || password.length < 12) {
     throw new Error("OWNER_PASSWORD must be at least 12 characters.");
+  }
+  if (isEasyToGuess(password)) {
+    throw new Error("OWNER_PASSWORD is too easy to guess. Use a long phrase or a random value.");
   }
   return ({ form }) => (safeEqual(form.get("password") ?? "", password) ? user : null);
 }

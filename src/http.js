@@ -3,6 +3,7 @@
 // that has them. src/node.js adapts node:http to that shape.
 
 import crypto from "node:crypto";
+import net from "node:net";
 
 export class BodyTooLarge extends Error {}
 
@@ -20,6 +21,23 @@ export function sha256(value) {
 // same time whatever the input.
 export function safeEqual(left, right) {
   return crypto.timingSafeEqual(Buffer.from(sha256(left)), Buffer.from(sha256(right)));
+}
+
+// What one caller means to a rate limit. A single IPv6 customer usually holds a
+// whole /64, so counting each address separately would let them walk the limit.
+export function addressBucket(address) {
+  const bare = String(address).split("%")[0];
+  if (!net.isIPv6(bare)) return address;
+  // The URL parser settles the case, the zeros and any dotted tail.
+  const canonical = new URL(`http://[${bare}]`).hostname.slice(1, -1);
+  const [left, right] = canonical.split("::").map((side) => (side ? side.split(":") : []));
+  const groups = [...left, ...Array(8 - left.length - (right?.length ?? 0)).fill("0"), ...(right ?? [])];
+  const mapped = groups.slice(0, 5).every((group) => group === "0") && groups[5] === "ffff";
+  if (mapped) {
+    const [high, low] = groups.slice(6).map((group) => parseInt(group, 16));
+    return [high >> 8, high & 255, low >> 8, low & 255].join(".");
+  }
+  return `${groups.slice(0, 4).join(":")}::/64`;
 }
 
 export function json(body, status = 200, headers = {}) {

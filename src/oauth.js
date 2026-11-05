@@ -21,6 +21,8 @@ const AUTH_METHODS = ["none", "client_secret_post", "client_secret_basic"];
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const MAX_STATE_LENGTH = 1024;
 const MAX_TOKEN_LENGTH = 512;
+const MAX_PASSWORD_TRIES_PER_REQUEST = 5;
+const ALL_PASSWORD_TRIES = "consent-global";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -226,7 +228,6 @@ export function createOAuth({ issuer, resource, store, scopes, defaultScopes, au
   }
 
   async function consent(request, { address }) {
-    if (!(await store.allow(`consent:${address}`, 10, 900))) return errorPage("Too many attempts. Wait and try again.", 429);
     const form = await readForm(request);
     const parked = await store.getRequest(form.get("request_id") ?? "");
     if (!parked || parked.expiresAt <= now()) return errorPage("This request has expired. Start again from the client.");
@@ -239,8 +240,25 @@ export function createOAuth({ issuer, resource, store, scopes, defaultScopes, au
       return backToClient(parked.redirectUri, issuer, { error: "access_denied", state: parked.state });
     }
     const client = await store.getClient(parked.clientId);
+
+    // Everything above is free, so a stranger with junk POSTs cannot lock the
+    // owner out. A try is counted before the check so that parallel guesses
+    // cannot all pass it at once, and given back below if it was right. The
+    // global limit is what stops a guesser who has many addresses. It is only
+    // reached by a caller still within their own limit, so one address cannot
+    // use it up alone.
+    const allowed = (await store.allow(`consent:${address}`, 10, 900)) && (await store.allow(ALL_PASSWORD_TRIES, 100, 3600));
+    if (!allowed) return errorPage("Too many attempts. Wait and try again.", 429);
     const user = await authenticateUser({ request, form });
-    if (!user) return consentPage(viewOf(parked, client, "That password is not right."), { status: 401 });
+    if (!user) {
+      if (await store.allow(`consent-request:${parked.id}`, MAX_PASSWORD_TRIES_PER_REQUEST - 1, REQUEST_TTL_SECONDS)) {
+        return consentPage(viewOf(parked, client, "That password is not right."), { status: 401 });
+      }
+      await store.takeRequest(parked.id);
+      return errorPage("Too many wrong passwords. Start again from the client.");
+    }
+    await store.refund(`consent:${address}`);
+    await store.refund(ALL_PASSWORD_TRIES);
     // Atomic, so a double submit produces one code.
     if (!(await store.takeRequest(parked.id))) return errorPage("This request was already answered.");
     const code = randomToken(32);
