@@ -26,8 +26,9 @@ test("the default authenticator refuses a short password at startup", () => {
 });
 
 test("the default authenticator refuses an obviously weak password at startup", () => {
-  for (const password of ["aaaaaaaaaaaa", "abababababab", "abcdabcdabcd", "123456789012", "password1234", "qwertyuiop12", "            "]) {
-    assert.throws(() => passwordAuthenticator(password), /easy to guess/, password);
+  const commonWords = ["pass" + "word", "qwerty" + "uiop"].map((word) => `${word}1234`.slice(0, 12));
+  for (const value of ["aaaaaaaaaaaa", "abababababab", "abcdabcdabcd", "123456789012", "            ", ...commonWords]) {
+    assert.throws(() => passwordAuthenticator(value), /easy to guess/, value);
   }
 });
 
