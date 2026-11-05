@@ -19,10 +19,14 @@
 // getToken returns the row plus `active`. allow(key, limit, windowSeconds) is
 // a fixed window rate limit. Every method may be async. Expiry is checked by
 // the caller, so purging is housekeeping and never a security control.
+//
+// saveRequest must also bound how many requests are parked, because anyone can
+// park one without signing in. Past the cap it drops the oldest rather than
+// refusing the newest, so that a flood delays the owner but cannot shut them out.
 
 const DAY_MS = 24 * 3600 * 1000;
 
-export function createMemoryStore({ now = Date.now, sweepEveryMs = 60_000 } = {}) {
+export function createMemoryStore({ now = Date.now, sweepEveryMs = 60_000, maxParkedRequests = 1000 } = {}) {
   const clients = new Map();
   const requests = new Map();
   const codes = new Map();
@@ -59,6 +63,8 @@ export function createMemoryStore({ now = Date.now, sweepEveryMs = 60_000 } = {}
     async saveRequest(request) {
       sweep();
       requests.set(request.id, request);
+      // A Map keeps insertion order, so the first key is the oldest.
+      if (requests.size > maxParkedRequests) requests.delete(requests.keys().next().value);
     },
     async getRequest(id) {
       return requests.get(id) ?? null;
@@ -104,6 +110,7 @@ export function createMemoryStore({ now = Date.now, sweepEveryMs = 60_000 } = {}
     },
 
     async allow(key, limit, windowSeconds) {
+      sweep();
       const time = now();
       const windowMs = windowSeconds * 1000;
       let row = rates.get(key);

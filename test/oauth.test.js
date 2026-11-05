@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createMemoryStore } from "../src/index.js";
 import { ISSUER, PASSWORD, REDIRECT, RESOURCE, harness, modernRpc, pkce } from "./helpers.js";
 
 const body = (response) => response.json();
@@ -165,6 +166,27 @@ test("repeated parameters are refused, so parsers cannot disagree on which one c
   const response = await h.call(`${h.authorizeUrl(client, pkce())}&redirect_uri=${encodeURIComponent("https://evil.example/cb")}`);
   assert.equal(response.status, 400);
   assert.equal(response.headers.get("location"), null);
+});
+
+test("authorize is rate limited per address, and another address is unaffected", async () => {
+  const h = harness();
+  const { client } = await h.register();
+  const url = h.authorizeUrl(client, pkce());
+  for (let i = 0; i < 60; i++) assert.equal((await h.call(url)).status, 200);
+  assert.equal((await h.call(url)).status, 429);
+  assert.equal((await h.call(url, {}, "203.0.113.2")).status, 200);
+  h.clock.ms += 61 * 1000;
+  assert.equal((await h.call(url)).status, 200);
+});
+
+test("a flood of authorize requests cannot park more than the cap, and a new one still works", async () => {
+  const store = createMemoryStore({ maxParkedRequests: 3 });
+  const h = harness({ store });
+  const { client } = await h.register();
+  const flood = [];
+  for (let i = 0; i < 5; i++) flood.push(await h.openConsent(client, pkce()));
+  assert.equal(await store.getRequest(flood[0].requestId), null);
+  assert.equal((await h.submitConsent(flood[4])).status, 303);
 });
 
 /* ---------- consent ---------- */

@@ -163,7 +163,8 @@ export function createOAuth({ issuer, resource, store, scopes, defaultScopes, au
 
   /* ---------- authorization ---------- */
 
-  async function authorize(request) {
+  async function authorize(request, { address }) {
+    if (!(await store.allow(`authorize:${address}`, 60, 60))) return errorPage("Too many requests. Wait and try again.", 429);
     const params = new URL(request.url).searchParams;
     if (hasRepeats(params, ["resource"])) return errorPage("A parameter appears more than once.");
     const client = await store.getClient(params.get("client_id"));

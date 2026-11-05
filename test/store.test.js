@@ -15,6 +15,14 @@ test("takeRequest hands a parked request out exactly once", async () => {
   assert.equal(await store.takeRequest("r1"), null);
 });
 
+test("saveRequest keeps at most the cap, dropping the oldest", async () => {
+  const store = createMemoryStore({ maxParkedRequests: 2 });
+  for (const id of ["r1", "r2", "r3"]) await store.saveRequest({ id, expiresAt: 1e15 });
+  assert.equal(await store.getRequest("r1"), null);
+  assert.equal((await store.getRequest("r2")).id, "r2");
+  assert.equal((await store.getRequest("r3")).id, "r3");
+});
+
 test("consumeCode reports first use once, and only for the owning client", async () => {
   const store = createMemoryStore();
   await store.saveCode({ hash: "c1", clientId: "a", expiresAt: 1e15 });
@@ -53,6 +61,15 @@ test("allow counts inside a window and resets after it", async () => {
   assert.equal(await store.allow("k", 2, 60), false);
   ms = 61_000;
   assert.equal(await store.allow("k", 2, 60), true);
+});
+
+test("rate limiting alone is enough to purge expired rows", async () => {
+  let ms = 0;
+  const store = createMemoryStore({ now: () => ms, sweepEveryMs: 0 });
+  await store.saveRequest({ id: "old", expiresAt: 10 });
+  ms = 100;
+  await store.allow("k", 1, 60);
+  assert.equal(await store.getRequest("old"), null);
 });
 
 test("expired rows are purged, so memory does not grow without bound", async () => {
