@@ -1,0 +1,21 @@
+{
+  "name": "remote-mcp-oauth",
+  "version": "0.1.0",
+  "description": "A minimal remote MCP server with its own OAuth 2.1 authorization server and no framework.",
+  "license": "MIT",
+  "author": "Elliot Himmelfarb",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/main.js",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/sdk": "1.32.2"
+  }
+}
